@@ -1,9 +1,7 @@
 "use client";
 
 import { Label } from "@/components/ui/label";
-
 import { Checkbox } from "@/components/ui/checkbox";
-
 import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import {
@@ -13,8 +11,6 @@ import {
   Popup,
   Circle,
   useMap,
-  LayerGroup,
-  Tooltip,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -52,6 +48,13 @@ import {
   Trash2,
   AlertTriangle,
   Eye,
+  BarChart3,
+  PieChart,
+  TrendingUp,
+  Calendar,
+  FileText,
+  Filter,
+  Download,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
@@ -64,6 +67,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart as RePieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+} from "recharts";
 
 // Define crime types with their respective colors
 const crimeTypes = [
@@ -96,7 +114,65 @@ function ChangeMapView({ center }: { center: [number, number] }) {
   return null;
 }
 
-// Function to calculate distance between two points in km using Haversine formula
+// Function to calculate hotspots
+function calculateHotspots(incidents: Incident[]) {
+  // Group incidents by proximity
+  const hotspots: {
+    center: [number, number];
+    count: number;
+    radius: number;
+  }[] = [];
+
+  // Process each incident
+  incidents.forEach((incident) => {
+    const incidentLocation: [number, number] = [
+      incident.latitude,
+      incident.longitude,
+    ];
+
+    // Check if this incident is near an existing hotspot
+    let addedToHotspot = false;
+    for (const hotspot of hotspots) {
+      // Calculate distance between incident and hotspot center
+      const distance = calculateDistance(
+        incidentLocation[0],
+        incidentLocation[1],
+        hotspot.center[0],
+        hotspot.center[1]
+      );
+
+      // If within 1km, add to this hotspot
+      if (distance < 1) {
+        hotspot.count += 1;
+        // Recalculate center as average of all points (simplified approach)
+        hotspot.center = [
+          (hotspot.center[0] * (hotspot.count - 1) + incidentLocation[0]) /
+            hotspot.count,
+          (hotspot.center[1] * (hotspot.count - 1) + incidentLocation[1]) /
+            hotspot.count,
+        ];
+        // Adjust radius based on count (more incidents = larger radius)
+        hotspot.radius = Math.min(500 + hotspot.count * 100, 2000);
+        addedToHotspot = true;
+        break;
+      }
+    }
+
+    // If not added to any existing hotspot, create a new one
+    if (!addedToHotspot) {
+      hotspots.push({
+        center: incidentLocation,
+        count: 1,
+        radius: 500, // Base radius in meters
+      });
+    }
+  });
+
+  // Filter out hotspots with only 1 incident
+  return hotspots.filter((hotspot) => hotspot.count > 1);
+}
+
+// Calculate distance between two points in km using Haversine formula
 function calculateDistance(
   lat1: number,
   lon1: number,
@@ -148,118 +224,6 @@ function getMonthName(month: number): string {
   return months[month];
 }
 
-// Define hotspot interface
-interface Hotspot {
-  center: [number, number];
-  count: number;
-  radius: number;
-  intensity: number;
-  incidents: Incident[];
-  riskLevel: "low" | "medium" | "high";
-  crimeTypes: { [key: string]: number };
-}
-
-// Simple hotspot calculation function
-function calculateHotspots(incidents: Incident[]): Hotspot[] {
-  if (incidents.length === 0) return [];
-
-  const hotspots: Hotspot[] = [];
-  const processedIncidents = new Set<string>();
-  const searchRadius = 1; // Fixed radius in km
-
-  // Sort incidents by date (newest first)
-  const sortedIncidents = [...incidents].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
-
-  for (const incident of sortedIncidents) {
-    // Skip already processed incidents
-    if (processedIncidents.has(incident.id)) continue;
-
-    const incidentLocation: [number, number] = [
-      incident.latitude,
-      incident.longitude,
-    ];
-
-    // Find all incidents within radius
-    const neighborIncidents = sortedIncidents.filter(
-      (neighbor) =>
-        !processedIncidents.has(neighbor.id) &&
-        calculateDistance(
-          incidentLocation[0],
-          incidentLocation[1],
-          neighbor.latitude,
-          neighbor.longitude
-        ) <= searchRadius
-    );
-
-    // Only create a hotspot if we have at least 2 incidents
-    if (neighborIncidents.length >= 2) {
-      // Mark all these incidents as processed
-      neighborIncidents.forEach((inc) => processedIncidents.add(inc.id));
-
-      // Calculate center as average of all points
-      const center: [number, number] = [
-        neighborIncidents.reduce((sum, inc) => sum + inc.latitude, 0) /
-          neighborIncidents.length,
-        neighborIncidents.reduce((sum, inc) => sum + inc.longitude, 0) /
-          neighborIncidents.length,
-      ];
-
-      // Count crime types
-      const crimeTypes: { [key: string]: number } = {};
-      neighborIncidents.forEach((inc) => {
-        crimeTypes[inc.type] = (crimeTypes[inc.type] || 0) + 1;
-      });
-
-      // Determine risk level based on incident count
-      let riskLevel: "low" | "medium" | "high";
-      if (neighborIncidents.length <= 3) riskLevel = "low";
-      else if (neighborIncidents.length <= 6) riskLevel = "medium";
-      else riskLevel = "high";
-
-      // Calculate radius based on the spread of incidents
-      const maxDistance = Math.max(
-        ...neighborIncidents.map((inc) =>
-          calculateDistance(center[0], center[1], inc.latitude, inc.longitude)
-        )
-      );
-
-      // Convert km to meters and ensure minimum size
-      const calculatedRadius = Math.max(maxDistance * 1000, 300);
-
-      // Calculate intensity based on incident count
-      const intensity = neighborIncidents.length / 10; // Normalize to 0-1 range (assuming max 10 incidents)
-
-      hotspots.push({
-        center,
-        count: neighborIncidents.length,
-        radius: calculatedRadius,
-        intensity,
-        incidents: neighborIncidents,
-        riskLevel,
-        crimeTypes,
-      });
-    }
-  }
-
-  return hotspots;
-}
-
-// Get color for hotspot based on risk level
-function getHotspotColor(riskLevel: string): string {
-  switch (riskLevel) {
-    case "low":
-      return "#4CAF50"; // Green
-    case "medium":
-      return "#FFC107"; // Amber
-    case "high":
-      return "#F44336"; // Red
-    default:
-      return "#F44336"; // Red
-  }
-}
-
 export default function AdminDashboard() {
   const { data: session } = useSession();
   const { toast } = useToast();
@@ -274,14 +238,11 @@ export default function AdminDashboard() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([
     35.5951, -80.8104,
   ]);
-  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
+  const [hotspots, setHotspots] = useState<
+    { center: [number, number]; count: number; radius: number }[]
+  >([]);
   const [showHotspots, setShowHotspots] = useState(true);
-  const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
-  const [hotspotInfoOpen, setHotspotInfoOpen] = useState(false);
   const [analyticsTimeframe, setAnalyticsTimeframe] = useState<string>("month");
-  const [hotspotMethod, setHotspotMethod] = useState<string>("density");
-  const [hotspotRadius, setHotspotRadius] = useState<number>(1);
-  const [hotspotThreshold, setHotspotThreshold] = useState<number>(2);
 
   useEffect(() => {
     fetchIncidents();
@@ -491,34 +452,65 @@ export default function AdminDashboard() {
       }
     }
 
-    // Hotspot analysis
-    const hotspotData = {
-      total: hotspots.length,
-      byRiskLevel: {
-        low: hotspots.filter((h) => h.riskLevel === "low").length,
-        medium: hotspots.filter((h) => h.riskLevel === "medium").length,
-        high: hotspots.filter((h) => h.riskLevel === "high").length,
-        critical: hotspots.filter((h) => h.riskLevel === "critical").length,
-      },
-      byType: {} as Record<string, number>,
-    };
+    // Resolution rate
+    const totalIncidents = incidents.length;
+    const resolvedIncidents = incidents.filter(
+      (incident) => incident.status === "resolved"
+    ).length;
+    const resolutionRate =
+      totalIncidents > 0 ? (resolvedIncidents / totalIncidents) * 100 : 0;
 
-    // Count incidents in hotspots by type
-    hotspots.forEach((hotspot) => {
-      Object.entries(hotspot.crimeTypes).forEach(([type, count]) => {
-        hotspotData.byType[type] = (hotspotData.byType[type] || 0) + count;
+    // Average resolution time (for resolved incidents)
+    const resolvedIncidentsWithTime = incidents
+      .filter((incident) => incident.status === "resolved")
+      .map((incident) => {
+        const createdAt = new Date(incident.createdAt);
+        const updatedAt = new Date(incident.updatedAt);
+        const resolutionTimeHours =
+          (updatedAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+        return resolutionTimeHours;
       });
+
+    const avgResolutionTime =
+      resolvedIncidentsWithTime.length > 0
+        ? resolvedIncidentsWithTime.reduce((sum, time) => sum + time, 0) /
+          resolvedIncidentsWithTime.length
+        : 0;
+
+    // Incidents by time of day
+    const byTimeOfDay = [
+      { name: "Morning (6AM-12PM)", value: 0 },
+      { name: "Afternoon (12PM-6PM)", value: 0 },
+      { name: "Evening (6PM-12AM)", value: 0 },
+      { name: "Night (12AM-6AM)", value: 0 },
+    ];
+
+    incidents.forEach((incident) => {
+      const date = new Date(incident.createdAt);
+      const hour = date.getHours();
+
+      if (hour >= 6 && hour < 12) byTimeOfDay[0].value++;
+      else if (hour >= 12 && hour < 18) byTimeOfDay[1].value++;
+      else if (hour >= 18 && hour < 24) byTimeOfDay[2].value++;
+      else byTimeOfDay[3].value++;
     });
+
+    // Heatmap data (simplified for this example)
+    const heatmapData = hotspots.map((hotspot) => ({
+      location: hotspot.center,
+      weight: hotspot.count,
+    }));
 
     return {
       byType,
       byStatus,
       timeData,
-      hotspotData,
-      totalIncidents: incidents.length,
-      resolvedIncidents: incidents.filter(
-        (incident) => incident.status === "resolved"
-      ).length,
+      resolutionRate,
+      avgResolutionTime,
+      byTimeOfDay,
+      heatmapData,
+      totalIncidents,
+      resolvedIncidents,
       pendingIncidents: incidents.filter(
         (incident) => incident.status === "pending"
       ).length,
@@ -526,13 +518,60 @@ export default function AdminDashboard() {
         (incident) => incident.status === "investigating"
       ).length,
     };
-  }, [incidents, analyticsTimeframe, hotspots]); // Add this closing bracket
+  }, [incidents, analyticsTimeframe, hotspots]);
+
+  // Function to export analytics data as CSV
+  const exportAnalyticsCSV = () => {
+    if (!incidents.length) return;
+
+    // Create CSV content
+    let csvContent = "data:text/csv;charset=utf-8,";
+
+    // Headers
+    csvContent +=
+      "ID,Title,Type,Status,Latitude,Longitude,Address,Created At,Updated At\n";
+
+    // Data rows
+    incidents.forEach((incident) => {
+      const row = [
+        incident.id,
+        `"${incident.title.replace(/"/g, '""')}"`,
+        incident.type,
+        incident.status,
+        incident.latitude,
+        incident.longitude,
+        `"${(incident.address || "").replace(/"/g, '""')}"`,
+        new Date(incident.createdAt).toISOString(),
+        new Date(incident.updatedAt).toISOString(),
+      ];
+      csvContent += row.join(",") + "\n";
+    });
+
+    // Create download link
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `crime_incidents_${new Date().toISOString().split("T")[0]}.csv`
+    );
+    document.body.appendChild(link);
+
+    // Trigger download
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${incidents.length} incidents to CSV file.`,
+    });
+  };
 
   return (
     <div className="container py-6">
       <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
 
-      <Tabs defaultValue="map" className="w-full">
+      <Tabs defaultValue="list" className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="list">List View</TabsTrigger>
           <TabsTrigger value="map">Map View</TabsTrigger>
@@ -741,9 +780,9 @@ export default function AdminDashboard() {
         <TabsContent value="map" className="mt-0">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle>Crime Hotspot Analysis</CardTitle>
+              <CardTitle>Incident Map</CardTitle>
               <CardDescription className="flex items-center justify-between">
-                <span>Geographic view of crime patterns and hotspots</span>
+                <span>Geographic view of all reported incidents</span>
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="show-hotspots"
@@ -765,7 +804,7 @@ export default function AdminDashboard() {
                 <div className="inset-0 absolute z-10">
                   <MapContainer
                     center={mapCenter}
-                    zoom={13}
+                    zoom={10}
                     style={{ height: "100%", width: "100%" }}
                   >
                     <ChangeMapView center={mapCenter} />
@@ -775,60 +814,32 @@ export default function AdminDashboard() {
                     />
 
                     {/* Render hotspots */}
-                    {showHotspots && (
-                      <LayerGroup>
-                        {hotspots.map((hotspot, index) => (
-                          <Circle
-                            key={`hotspot-${index}`}
-                            center={hotspot.center}
-                            radius={hotspot.radius}
-                            pathOptions={{
-                              color: getHotspotColor(hotspot.riskLevel),
-                              fillColor: getHotspotColor(hotspot.riskLevel),
-                              fillOpacity: 0.2 + hotspot.intensity * 0.3,
-                              weight: 2,
-                            }}
-                            eventHandlers={{
-                              click: () => {
-                                setSelectedHotspot(hotspot);
-                                setHotspotInfoOpen(true);
-                              },
-                              mouseover: (e) => {
-                                e.target.setStyle({
-                                  fillOpacity: 0.4 + hotspot.intensity * 0.3,
-                                  weight: 3,
-                                });
-                              },
-                              mouseout: (e) => {
-                                e.target.setStyle({
-                                  fillOpacity: 0.2 + hotspot.intensity * 0.3,
-                                  weight: 2,
-                                });
-                              },
-                            }}
-                          >
-                            <Tooltip
-                              direction="top"
-                              offset={[0, -20]}
-                              opacity={1}
-                            >
-                              <div className="p-1">
-                                <div className="font-bold flex items-center gap-1">
-                                  <AlertTriangle
-                                    className="h-3 w-3"
-                                    style={{
-                                      color: getHotspotColor(hotspot.riskLevel),
-                                    }}
-                                  />
-                                  {hotspot.count} incidents in this area
-                                </div>
-                                <div className="text-xs">Click for details</div>
-                              </div>
-                            </Tooltip>
-                          </Circle>
-                        ))}
-                      </LayerGroup>
-                    )}
+                    {showHotspots &&
+                      hotspots.map((hotspot, index) => (
+                        <Circle
+                          key={`hotspot-${index}`}
+                          center={hotspot.center}
+                          radius={hotspot.radius}
+                          pathOptions={{
+                            color: "red",
+                            fillColor: "red",
+                            fillOpacity: 0.2 + Math.min(hotspot.count, 10) / 20, // More incidents = more opaque
+                            weight: 1,
+                          }}
+                        >
+                          <Popup>
+                            <div className="p-2">
+                              <h3 className="font-bold text-red-600 flex items-center gap-1">
+                                <AlertTriangle className="h-4 w-4" />
+                                Crime Hotspot
+                              </h3>
+                              <p className="text-sm">
+                                {hotspot.count} incidents reported in this area
+                              </p>
+                            </div>
+                          </Popup>
+                        </Circle>
+                      ))}
 
                     {/* Render incident markers */}
                     {filteredIncidents.map((incident) => (
@@ -908,119 +919,315 @@ export default function AdminDashboard() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Hotspot Detail Dialog */}
-          {selectedHotspot && (
-            <Dialog open={hotspotInfoOpen} onOpenChange={setHotspotInfoOpen}>
-              <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <AlertTriangle
-                      className="h-5 w-5"
-                      style={{
-                        color: getHotspotColor(selectedHotspot.riskLevel),
-                      }}
-                    />
-                    Crime Hotspot ({selectedHotspot.count} incidents)
-                  </DialogTitle>
-                  <DialogDescription>
-                    This area has a higher concentration of reported crimes
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="grid gap-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-medium">Risk Level</h3>
-                      <Badge
-                        className="text-white"
-                        style={{
-                          backgroundColor: getHotspotColor(
-                            selectedHotspot.riskLevel
-                          ),
-                        }}
-                      >
-                        {selectedHotspot.riskLevel.toUpperCase()}
-                      </Badge>
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-medium">Incident Types</h3>
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(selectedHotspot.crimeTypes).map(
-                          ([type, count]) => (
-                            <Badge
-                              key={type}
-                              variant="outline"
-                              className="text-xs"
-                            >
-                              {crimeTypes.find((t) => t.id === type)?.label ||
-                                "Other"}
-                              : {count}
-                            </Badge>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium">
-                      Incidents in this Hotspot
-                    </h3>
-                    <div className="max-h-60 overflow-y-auto border rounded-md">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Title</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Date</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {selectedHotspot.incidents.map((incident) => (
-                            <TableRow
-                              key={incident.id}
-                              className="cursor-pointer hover:bg-muted"
-                              onClick={() => {
-                                setSelectedIncident(incident);
-                                setHotspotInfoOpen(false);
-                              }}
-                            >
-                              <TableCell className="font-medium">
-                                {incident.title}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {crimeTypes.find(
-                                    (t) => t.id === incident.type
-                                  )?.label || "Other"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {new Date(
-                                  incident.createdAt
-                                ).toLocaleDateString()}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                </div>
-
-                <DialogFooter>
-                  <Button onClick={() => setHotspotInfoOpen(false)}>
-                    Close
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-0">
-          {/* Analytics content here */}
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Crime Analytics Dashboard</h2>
+            <div className="flex items-center gap-4">
+              <Select
+                value={analyticsTimeframe}
+                onValueChange={setAnalyticsTimeframe}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select timeframe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">Last 7 Days</SelectItem>
+                  <SelectItem value="month">Last 30 Days</SelectItem>
+                  <SelectItem value="year">Last 12 Months</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={exportAnalyticsCSV}
+              >
+                <Download className="h-4 w-4" />
+                Export Data
+              </Button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-8">Loading analytics data...</div>
+          ) : !analyticsData ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No incident data available for analysis
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Total Incidents
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {analyticsData.totalIncidents}
+                        </h3>
+                      </div>
+                      <FileText className="h-8 w-8 text-primary opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Resolution Rate
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {analyticsData.resolutionRate.toFixed(1)}%
+                        </h3>
+                      </div>
+                      <CheckCircle className="h-8 w-8 text-green-500 opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Avg. Resolution Time
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {analyticsData.avgResolutionTime.toFixed(1)} hrs
+                        </h3>
+                      </div>
+                      <Clock className="h-8 w-8 text-blue-500 opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Crime Hotspots
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {hotspots.length}
+                        </h3>
+                      </div>
+                      <AlertTriangle className="h-8 w-8 text-red-500 opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row 1 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Incidents Over Time
+                    </CardTitle>
+                    <CardDescription>
+                      Number of reported incidents by{" "}
+                      {analyticsTimeframe === "week"
+                        ? "day"
+                        : analyticsTimeframe === "month"
+                        ? "week"
+                        : "month"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={analyticsData.timeData}
+                          margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Area
+                            type="monotone"
+                            dataKey="count"
+                            name="Incidents"
+                            stroke="#3b82f6"
+                            fill="#3b82f6"
+                            fillOpacity={0.2}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <PieChart className="h-5 w-5" />
+                      Incidents by Type
+                    </CardTitle>
+                    <CardDescription>
+                      Distribution of incidents across different crime
+                      categories
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RePieChart>
+                          <Pie
+                            data={analyticsData.byType}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={true}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                            nameKey="name"
+                            label={({ name, percent }) =>
+                              `${name}: ${(percent * 100).toFixed(0)}%`
+                            }
+                          >
+                            {analyticsData.byType.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </RePieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row 2 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Incidents by Status
+                    </CardTitle>
+                    <CardDescription>
+                      Current status of all reported incidents
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={analyticsData.byStatus}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" name="Incidents">
+                            {analyticsData.byStatus.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5" />
+                      Incidents by Time of Day
+                    </CardTitle>
+                    <CardDescription>
+                      When incidents are most frequently reported
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={analyticsData.byTimeOfDay}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar
+                            dataKey="value"
+                            name="Incidents"
+                            fill="#8884d8"
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Status Breakdown */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Filter className="h-5 w-5" />
+                    Incident Status Breakdown
+                  </CardTitle>
+                  <CardDescription>
+                    Detailed view of incident processing status
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {statusTypes.map((status) => (
+                      <div
+                        key={status.id}
+                        className="flex flex-col items-center p-4 border rounded-lg"
+                      >
+                        <div
+                          className="p-3 rounded-full mb-2"
+                          style={{ backgroundColor: `${status.color}20` }}
+                        >
+                          <status.icon
+                            className="h-6 w-6"
+                            style={{ color: status.color }}
+                          />
+                        </div>
+                        <h3 className="text-lg font-semibold">
+                          {status.label}
+                        </h3>
+                        <p className="text-3xl font-bold mt-2">
+                          {
+                            incidents.filter(
+                              (incident) => incident.status === status.id
+                            ).length
+                          }
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {(
+                            (incidents.filter(
+                              (incident) => incident.status === status.id
+                            ).length /
+                              incidents.length) *
+                            100
+                          ).toFixed(1)}
+                          % of total
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
