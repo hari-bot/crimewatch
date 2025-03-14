@@ -1,10 +1,8 @@
 "use client";
 
 import { Label } from "@/components/ui/label";
-
 import { Checkbox } from "@/components/ui/checkbox";
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import {
   MapContainer,
@@ -50,6 +48,13 @@ import {
   Trash2,
   AlertTriangle,
   Eye,
+  BarChart3,
+  PieChart,
+  TrendingUp,
+  Calendar,
+  FileText,
+  Filter,
+  Download,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
@@ -62,6 +67,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart as RePieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+} from "recharts";
 
 // Define crime types with their respective colors
 const crimeTypes = [
@@ -74,10 +94,15 @@ const crimeTypes = [
 
 // Define status types
 const statusTypes = [
-  { id: "pending", label: "Pending", icon: Clock },
-  { id: "investigating", label: "Investigating", icon: Search },
-  { id: "resolved", label: "Resolved", icon: CheckCircle },
-  { id: "dismissed", label: "Dismissed", icon: Trash2 },
+  { id: "pending", label: "Pending", icon: Clock, color: "#FFC107" },
+  {
+    id: "investigating",
+    label: "Investigating",
+    icon: Search,
+    color: "#2196F3",
+  },
+  { id: "resolved", label: "Resolved", icon: CheckCircle, color: "#4CAF50" },
+  { id: "dismissed", label: "Dismissed", icon: Trash2, color: "#9E9E9E" },
 ];
 
 // Component to update map view when center changes
@@ -172,6 +197,33 @@ function deg2rad(deg: number) {
   return deg * (Math.PI / 180);
 }
 
+// Function to format date for grouping
+function formatDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// Function to get month name
+function getMonthName(month: number): string {
+  const months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return months[month];
+}
+
 export default function AdminDashboard() {
   const { data: session } = useSession();
   const { toast } = useToast();
@@ -190,6 +242,7 @@ export default function AdminDashboard() {
     { center: [number, number]; count: number; radius: number }[]
   >([]);
   const [showHotspots, setShowHotspots] = useState(true);
+  const [analyticsTimeframe, setAnalyticsTimeframe] = useState<string>("month");
 
   useEffect(() => {
     fetchIncidents();
@@ -323,6 +376,197 @@ export default function AdminDashboard() {
     });
   };
 
+  // Analytics data preparation
+  const analyticsData = useMemo(() => {
+    if (!incidents.length) return null;
+
+    // Count incidents by type
+    const byType = crimeTypes.map((type) => ({
+      name: type.label,
+      value: incidents.filter((incident) => incident.type === type.id).length,
+      color: type.color,
+    }));
+
+    // Count incidents by status
+    const byStatus = statusTypes.map((status) => ({
+      name: status.label,
+      value: incidents.filter((incident) => incident.status === status.id)
+        .length,
+      color: status.color,
+    }));
+
+    // Incidents over time
+    const now = new Date();
+    const timeData: { name: string; count: number }[] = [];
+
+    if (analyticsTimeframe === "week") {
+      // Last 7 days
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+        const dateStr = formatDate(date);
+        const count = incidents.filter(
+          (incident) => formatDate(new Date(incident.createdAt)) === dateStr
+        ).length;
+        timeData.push({
+          name: date.toLocaleDateString("en-US", { weekday: "short" }),
+          count,
+        });
+      }
+    } else if (analyticsTimeframe === "month") {
+      // Last 30 days grouped by week
+      for (let i = 3; i >= 0; i--) {
+        const endDate = new Date(now);
+        endDate.setDate(endDate.getDate() - i * 7);
+        const startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 6);
+
+        const count = incidents.filter((incident) => {
+          const incidentDate = new Date(incident.createdAt);
+          return incidentDate >= startDate && incidentDate <= endDate;
+        }).length;
+
+        timeData.push({
+          name: `${startDate.getMonth() + 1}/${startDate.getDate()}-${
+            endDate.getMonth() + 1
+          }/${endDate.getDate()}`,
+          count,
+        });
+      }
+    } else if (analyticsTimeframe === "year") {
+      // Last 12 months
+      for (let i = 11; i >= 0; i--) {
+        const date = new Date(now);
+        date.setMonth(date.getMonth() - i);
+        const monthYear = `${getMonthName(date.getMonth()).substring(0, 3)}`;
+
+        const count = incidents.filter((incident) => {
+          const incidentDate = new Date(incident.createdAt);
+          return (
+            incidentDate.getMonth() === date.getMonth() &&
+            incidentDate.getFullYear() === date.getFullYear()
+          );
+        }).length;
+
+        timeData.push({ name: monthYear, count });
+      }
+    }
+
+    // Resolution rate
+    const totalIncidents = incidents.length;
+    const resolvedIncidents = incidents.filter(
+      (incident) => incident.status === "resolved"
+    ).length;
+    const resolutionRate =
+      totalIncidents > 0 ? (resolvedIncidents / totalIncidents) * 100 : 0;
+
+    // Average resolution time (for resolved incidents)
+    const resolvedIncidentsWithTime = incidents
+      .filter((incident) => incident.status === "resolved")
+      .map((incident) => {
+        const createdAt = new Date(incident.createdAt);
+        const updatedAt = new Date(incident.updatedAt);
+        const resolutionTimeHours =
+          (updatedAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+        return resolutionTimeHours;
+      });
+
+    const avgResolutionTime =
+      resolvedIncidentsWithTime.length > 0
+        ? resolvedIncidentsWithTime.reduce((sum, time) => sum + time, 0) /
+          resolvedIncidentsWithTime.length
+        : 0;
+
+    // Incidents by time of day
+    const byTimeOfDay = [
+      { name: "Morning (6AM-12PM)", value: 0 },
+      { name: "Afternoon (12PM-6PM)", value: 0 },
+      { name: "Evening (6PM-12AM)", value: 0 },
+      { name: "Night (12AM-6AM)", value: 0 },
+    ];
+
+    incidents.forEach((incident) => {
+      const date = new Date(incident.createdAt);
+      const hour = date.getHours();
+
+      if (hour >= 6 && hour < 12) byTimeOfDay[0].value++;
+      else if (hour >= 12 && hour < 18) byTimeOfDay[1].value++;
+      else if (hour >= 18 && hour < 24) byTimeOfDay[2].value++;
+      else byTimeOfDay[3].value++;
+    });
+
+    // Heatmap data (simplified for this example)
+    const heatmapData = hotspots.map((hotspot) => ({
+      location: hotspot.center,
+      weight: hotspot.count,
+    }));
+
+    return {
+      byType,
+      byStatus,
+      timeData,
+      resolutionRate,
+      avgResolutionTime,
+      byTimeOfDay,
+      heatmapData,
+      totalIncidents,
+      resolvedIncidents,
+      pendingIncidents: incidents.filter(
+        (incident) => incident.status === "pending"
+      ).length,
+      investigatingIncidents: incidents.filter(
+        (incident) => incident.status === "investigating"
+      ).length,
+    };
+  }, [incidents, analyticsTimeframe, hotspots]);
+
+  // Function to export analytics data as CSV
+  const exportAnalyticsCSV = () => {
+    if (!incidents.length) return;
+
+    // Create CSV content
+    let csvContent = "data:text/csv;charset=utf-8,";
+
+    // Headers
+    csvContent +=
+      "ID,Title,Type,Status,Latitude,Longitude,Address,Created At,Updated At\n";
+
+    // Data rows
+    incidents.forEach((incident) => {
+      const row = [
+        incident.id,
+        `"${incident.title.replace(/"/g, '""')}"`,
+        incident.type,
+        incident.status,
+        incident.latitude,
+        incident.longitude,
+        `"${(incident.address || "").replace(/"/g, '""')}"`,
+        new Date(incident.createdAt).toISOString(),
+        new Date(incident.updatedAt).toISOString(),
+      ];
+      csvContent += row.join(",") + "\n";
+    });
+
+    // Create download link
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `crime_incidents_${new Date().toISOString().split("T")[0]}.csv`
+    );
+    document.body.appendChild(link);
+
+    // Trigger download
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${incidents.length} incidents to CSV file.`,
+    });
+  };
+
   return (
     <div className="container py-6">
       <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
@@ -331,6 +575,7 @@ export default function AdminDashboard() {
         <TabsList className="mb-4">
           <TabsTrigger value="list">List View</TabsTrigger>
           <TabsTrigger value="map">Map View</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
 
         <div className="flex items-center gap-4 mb-4">
@@ -674,6 +919,315 @@ export default function AdminDashboard() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-0">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Crime Analytics Dashboard</h2>
+            <div className="flex items-center gap-4">
+              <Select
+                value={analyticsTimeframe}
+                onValueChange={setAnalyticsTimeframe}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select timeframe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">Last 7 Days</SelectItem>
+                  <SelectItem value="month">Last 30 Days</SelectItem>
+                  <SelectItem value="year">Last 12 Months</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={exportAnalyticsCSV}
+              >
+                <Download className="h-4 w-4" />
+                Export Data
+              </Button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-8">Loading analytics data...</div>
+          ) : !analyticsData ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No incident data available for analysis
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Total Incidents
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {analyticsData.totalIncidents}
+                        </h3>
+                      </div>
+                      <FileText className="h-8 w-8 text-primary opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Resolution Rate
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {analyticsData.resolutionRate.toFixed(1)}%
+                        </h3>
+                      </div>
+                      <CheckCircle className="h-8 w-8 text-green-500 opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Avg. Resolution Time
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {analyticsData.avgResolutionTime.toFixed(1)} hrs
+                        </h3>
+                      </div>
+                      <Clock className="h-8 w-8 text-blue-500 opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Crime Hotspots
+                        </p>
+                        <h3 className="text-2xl font-bold">
+                          {hotspots.length}
+                        </h3>
+                      </div>
+                      <AlertTriangle className="h-8 w-8 text-red-500 opacity-80" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row 1 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Incidents Over Time
+                    </CardTitle>
+                    <CardDescription>
+                      Number of reported incidents by{" "}
+                      {analyticsTimeframe === "week"
+                        ? "day"
+                        : analyticsTimeframe === "month"
+                        ? "week"
+                        : "month"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={analyticsData.timeData}
+                          margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Area
+                            type="monotone"
+                            dataKey="count"
+                            name="Incidents"
+                            stroke="#3b82f6"
+                            fill="#3b82f6"
+                            fillOpacity={0.2}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <PieChart className="h-5 w-5" />
+                      Incidents by Type
+                    </CardTitle>
+                    <CardDescription>
+                      Distribution of incidents across different crime
+                      categories
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RePieChart>
+                          <Pie
+                            data={analyticsData.byType}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={true}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                            nameKey="name"
+                            label={({ name, percent }) =>
+                              `${name}: ${(percent * 100).toFixed(0)}%`
+                            }
+                          >
+                            {analyticsData.byType.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </RePieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row 2 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Incidents by Status
+                    </CardTitle>
+                    <CardDescription>
+                      Current status of all reported incidents
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={analyticsData.byStatus}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" name="Incidents">
+                            {analyticsData.byStatus.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5" />
+                      Incidents by Time of Day
+                    </CardTitle>
+                    <CardDescription>
+                      When incidents are most frequently reported
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={analyticsData.byTimeOfDay}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar
+                            dataKey="value"
+                            name="Incidents"
+                            fill="#8884d8"
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Status Breakdown */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Filter className="h-5 w-5" />
+                    Incident Status Breakdown
+                  </CardTitle>
+                  <CardDescription>
+                    Detailed view of incident processing status
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {statusTypes.map((status) => (
+                      <div
+                        key={status.id}
+                        className="flex flex-col items-center p-4 border rounded-lg"
+                      >
+                        <div
+                          className="p-3 rounded-full mb-2"
+                          style={{ backgroundColor: `${status.color}20` }}
+                        >
+                          <status.icon
+                            className="h-6 w-6"
+                            style={{ color: status.color }}
+                          />
+                        </div>
+                        <h3 className="text-lg font-semibold">
+                          {status.label}
+                        </h3>
+                        <p className="text-3xl font-bold mt-2">
+                          {
+                            incidents.filter(
+                              (incident) => incident.status === status.id
+                            ).length
+                          }
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {(
+                            (incidents.filter(
+                              (incident) => incident.status === status.id
+                            ).length /
+                              incidents.length) *
+                            100
+                          ).toFixed(1)}
+                          % of total
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
