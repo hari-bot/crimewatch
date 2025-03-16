@@ -40,7 +40,14 @@ export default function AdminDashboard() {
     35.5951, -80.8104,
   ]);
   const [hotspots, setHotspots] = useState<
-    { center: [number, number]; count: number; radius: number }[]
+    {
+      center: [number, number];
+      count: number;
+      radius: number;
+      incidents: Incident[];
+      incidentsByType?: Record<string, number>;
+      riskLevel?: string;
+    }[]
   >([]);
   const [analyticsTimeframe, setAnalyticsTimeframe] = useState<string>("month");
 
@@ -376,6 +383,7 @@ export default function AdminDashboard() {
             mapCenter={mapCenter}
             setMapCenter={setMapCenter}
             setSelectedIncident={setSelectedIncident}
+            allIncidents={incidents}
           />
         </TabsContent>
 

@@ -32,6 +32,9 @@ export function calculateHotspots(incidents: Incident[]) {
     center: [number, number];
     count: number;
     radius: number;
+    incidents: Incident[];
+    incidentsByType?: Record<string, number>;
+    riskLevel?: string;
   }[] = [];
 
   // Process each incident
@@ -55,6 +58,7 @@ export function calculateHotspots(incidents: Incident[]) {
       // If within 1km, add to this hotspot
       if (distance < 1) {
         hotspot.count += 1;
+        hotspot.incidents.push(incident);
         // Recalculate center as average of all points (simplified approach)
         hotspot.center = [
           (hotspot.center[0] * (hotspot.count - 1) + incidentLocation[0]) /
@@ -75,12 +79,89 @@ export function calculateHotspots(incidents: Incident[]) {
         center: incidentLocation,
         count: 1,
         radius: 500, // Base radius in meters
+        incidents: [incident],
       });
     }
   });
 
   // Filter out hotspots with only 1 incident
-  return hotspots.filter((hotspot) => hotspot.count > 1);
+  const filteredHotspots = hotspots.filter((hotspot) => hotspot.count > 1);
+
+  // Add additional data to each hotspot
+  filteredHotspots.forEach((hotspot) => {
+    hotspot.incidentsByType = countIncidentsByType(hotspot.incidents);
+    hotspot.riskLevel = determineRiskLevel(hotspot.count);
+  });
+
+  return filteredHotspots;
+}
+
+/**
+ * Determines the risk level of a hotspot based on incident count and types
+ */
+export function determineRiskLevel(
+  count: number
+): "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" {
+  if (count <= 3) return "LOW";
+  if (count <= 5) return "MEDIUM";
+  if (count <= 10) return "HIGH";
+  return "CRITICAL";
+}
+
+/**
+ * Gets the color for a risk level
+ */
+export function getRiskLevelColor(level: string): string {
+  switch (level) {
+    case "LOW":
+      return "#4CAF50"; // Green
+    case "MEDIUM":
+      return "#FFC107"; // Yellow
+    case "HIGH":
+      return "#FF5722"; // Orange
+    case "CRITICAL":
+      return "#F44336"; // Red
+    default:
+      return "#9E9E9E"; // Grey
+  }
+}
+
+/**
+ * Finds incidents within a hotspot radius
+ */
+export function getIncidentsInHotspot(
+  incidents: Incident[],
+  hotspotCenter: [number, number],
+  radius: number
+): Incident[] {
+  return incidents.filter((incident) => {
+    const distance = calculateDistance(
+      hotspotCenter[0],
+      hotspotCenter[1],
+      incident.latitude,
+      incident.longitude
+    );
+    // Convert radius from meters to km for comparison
+    return distance * 1000 <= radius;
+  });
+}
+
+/**
+ * Counts incidents by type within a hotspot
+ */
+export function countIncidentsByType(
+  incidents: Incident[]
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  incidents.forEach((incident) => {
+    if (!counts[incident.type]) {
+      counts[incident.type] = 0;
+    }
+    counts[incident.type]++;
+  });
+
+  return counts;
 }
 
 // Function to format date for grouping
