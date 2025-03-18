@@ -3,7 +3,7 @@
 import { Marker, Popup } from "react-leaflet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Eye } from "lucide-react";
+import { Eye, Calendar } from "lucide-react";
 import L from "leaflet";
 import type { Incident } from "@/types";
 import { crimeTypes } from "@/constants/crime-types";
@@ -21,13 +21,16 @@ export default function IncidentMarker({
   onSelect,
   onViewDetails,
 }: IncidentMarkerProps) {
+  const crimeType =
+    crimeTypes.find((t) => t.id === incident.type) || crimeTypes[4];
+
   // Create marker icon based on crime type
   const markerIcon = L.divIcon({
     className: `custom-div-icon ${isSelected ? "selected-marker" : ""}`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
     html: `<div style="background-color: ${
-      crimeTypes.find((t) => t.id === incident.type)?.color || "#581845"
+      crimeType.color
     };" class="marker-pin ${isSelected ? "selected-marker-pin" : ""}"></div>`,
   });
 
@@ -41,27 +44,52 @@ export default function IncidentMarker({
         },
       }}
     >
-      <Popup>
-        <div className="p-2">
-          <h3 className="font-bold">{incident.title}</h3>
-          <p className="text-sm">{incident.address || "Unknown Location"}</p>
-          <Badge variant="outline" className="mt-2">
-            {crimeTypes.find((t) => t.id === incident.type)?.label || "Other"}
-          </Badge>
-          <div className="mt-2">
-            <Button
+      <Popup className="incident-popup">
+        <div className="p-2 w-64">
+          <h3 className="font-bold text-sm mb-1">{incident.title}</h3>
+          <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+            {incident.description}
+          </p>
+
+          <div className="flex items-center justify-between mb-2">
+            <Badge
               variant="outline"
-              size="sm"
-              className="w-full flex items-center justify-center"
-              onClick={(e) => {
-                e.stopPropagation();
-                onViewDetails(incident);
+              style={{
+                backgroundColor: `${crimeType.color}20`,
+                color: crimeType.color,
+                borderColor: `${crimeType.color}40`,
               }}
             >
-              <Eye className="h-3 w-3 mr-1" />
-              View Details
-            </Button>
+              {crimeType.label}
+            </Badge>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <Calendar className="h-3 w-3 mr-1" />
+              {new Date(incident.createdAt).toLocaleDateString()}
+            </div>
           </div>
+
+          {incident.imageUrl && (
+            <div className="w-full h-24 rounded-md overflow-hidden mb-2">
+              <img
+                src={incident.imageUrl || "/placeholder.svg"}
+                alt={incident.title}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full flex items-center justify-center"
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewDetails(incident);
+            }}
+          >
+            <Eye className="h-3 w-3 mr-1" />
+            View Details
+          </Button>
         </div>
       </Popup>
     </Marker>

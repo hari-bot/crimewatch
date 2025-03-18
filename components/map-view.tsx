@@ -1,21 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Circle } from "react-leaflet";
+import { MapContainer, TileLayer, Circle, ZoomControl } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-defaulticon-compatibility";
 import "leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css";
 import type { Incident } from "@/types";
 import { useSession } from "next-auth/react";
 import { crimeTypes } from "@/constants/crime-types";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { Button } from "@/components/ui/button";
+import { ChevronUp } from "lucide-react";
 import MapController from "@/components/map-controller";
 import LocationMarker from "@/components/map/location-marker";
 import IncidentMarker from "@/components/map/incident-marker";
-import IncidentCard from "@/components/map/incident-card";
+import IncidentCarousel from "@/components/map/incident-carousel";
 import FilterSidebar from "@/components/map/filter-sidebar";
-import IncidentDetailDialog from "./incident-detail-dialouge";
+import SidebarToggle from "@/components/map/sidebar-toggle";
+import IncidentDetailDialog from "@/components/map/incident-detail-dialog";
 
 export default function MapView() {
+  // Add a new state for carousel visibility
+  const [showCarousel, setShowCarousel] = useState(true);
   const { data: session } = useSession();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [radius, setRadius] = useState(2000);
@@ -31,6 +37,14 @@ export default function MapView() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedIncidentData, setSelectedIncidentData] =
     useState<Incident | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const isMobile = useMediaQuery("(max-width: 768px)");
+
+  useEffect(() => {
+    // Close sidebar on mobile by default
+    setSidebarOpen(!isMobile);
+  }, [isMobile]);
 
   useEffect(() => {
     // Get user's location
@@ -111,12 +125,23 @@ export default function MapView() {
     fetchIncidents(lat, lng, radius);
   };
 
+  // Add a function to toggle the carousel visibility
+  const toggleCarousel = () => {
+    setShowCarousel((prev) => !prev);
+  };
+
   const filteredIncidents = incidents.filter((incident) =>
     selectedTypes.includes(incident.type)
   );
 
   return (
-    <div className="flex flex-col md:flex-row h-screen w-full">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-3.5rem)] w-full relative">
+      {/* Mobile Sidebar Toggle */}
+      <SidebarToggle
+        isOpen={sidebarOpen}
+        toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+      />
+
       {/* Sidebar */}
       <FilterSidebar
         selectedTypes={selectedTypes}
@@ -124,17 +149,22 @@ export default function MapView() {
         radius={radius}
         onRadiusChange={setRadius}
         onLocationSearch={handleLocationSearch}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        showCarousel={showCarousel}
+        onToggleCarousel={toggleCarousel}
       />
 
       {/* Map Container */}
-      <div className="flex-1 relative h-screen">
-        <div className="inset-0 absolute z-10">
+      <div className="flex-1 relative h-full">
+        <div className="absolute inset-0 z-10">
           <MapContainer
             center={mapCenter}
             zoom={13}
             style={{ height: "100%", width: "100%" }}
             zoomControl={false}
           >
+            <ZoomControl position="bottomright" />
             <MapController
               center={mapCenter}
               zoom={13}
@@ -175,25 +205,22 @@ export default function MapView() {
         </div>
 
         {/* Incident Cards at Bottom */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 p-4">
-          <div className="overflow-x-auto whitespace-nowrap">
-            <div className="inline-flex space-x-4">
-              {filteredIncidents.length > 0 ? (
-                filteredIncidents.map((incident) => (
-                  <IncidentCard
-                    key={incident.id}
-                    incident={incident}
-                    isSelected={selectedIncident === incident.id}
-                    onClick={() => handleCardClick(incident)}
-                    onViewDetails={() => handleViewDetails(incident)}
-                  />
-                ))
-              ) : (
-                <div className="w-full text-center py-4 text-muted-foreground bg-white/80 rounded-lg">
-                  No incidents found in this area
-                </div>
-              )}
-            </div>
+        <div
+          className={`absolute bottom-4 left-0 right-0 z-20 px-4 transition-all duration-300 ease-in-out ${
+            showCarousel
+              ? "opacity-100 translate-y-0"
+              : "opacity-0 translate-y-16 pointer-events-none"
+          }`}
+        >
+          <div className="bg-background/80 backdrop-blur-sm rounded-lg shadow-lg p-4 max-w-5xl mx-auto">
+            <IncidentCarousel
+              incidents={filteredIncidents}
+              selectedIncident={selectedIncident}
+              onCardClick={handleCardClick}
+              onViewDetails={handleViewDetails}
+              showCarousel={showCarousel}
+              onToggleCarousel={toggleCarousel}
+            />
           </div>
         </div>
       </div>
@@ -205,19 +232,34 @@ export default function MapView() {
         onOpenChange={setDetailDialogOpen}
       />
 
+      {/* Add a floating toggle button when carousel is hidden */}
+      {!showCarousel && (
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={toggleCarousel}
+            className="rounded-full shadow-md px-3 py-1 h-auto bg-background/90 backdrop-blur-sm hover:bg-background/95 border"
+          >
+            <ChevronUp className="h-3.5 w-3.5 mr-1" />
+            <span className="text-xs">Show Incidents</span>
+          </Button>
+        </div>
+      )}
+
       {/* Custom CSS for markers */}
       <style jsx global>{`
         .marker-pin {
           width: 30px;
           height: 30px;
           border-radius: 50% 50% 50% 0;
-          background: #c30b82;
           position: absolute;
           transform: rotate(-45deg);
           left: 50%;
           top: 50%;
           margin: -15px 0 0 -15px;
           transition: all 0.3s ease;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
 
         .marker-pin::after {
@@ -242,6 +284,22 @@ export default function MapView() {
           width: 18px;
           height: 18px;
           margin: 11px 0 0 11px;
+        }
+
+        /* Improve map controls */
+        .leaflet-control-zoom {
+          border-radius: 8px !important;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+        }
+
+        .leaflet-control-zoom a {
+          background-color: white !important;
+          color: #333 !important;
+        }
+
+        .leaflet-control-zoom a:hover {
+          background-color: #f5f5f5 !important;
         }
       `}</style>
     </div>
