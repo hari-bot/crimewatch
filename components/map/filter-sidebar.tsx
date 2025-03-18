@@ -56,6 +56,19 @@ export default function FilterSidebar({
     }
   };
 
+  const handleUseCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          onLocationSearch(position.coords.latitude, position.coords.longitude);
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+        }
+      );
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -83,6 +96,10 @@ export default function FilterSidebar({
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Enter address or place..." className="pl-9" />
             </form>
+            <Button onClick={handleUseCurrentLocation} className="mt-2 w-full">
+              <MapPin className="mr-2 h-4 w-4" />
+              Use Current Location
+            </Button>
           </CardContent>
         </Card>
 

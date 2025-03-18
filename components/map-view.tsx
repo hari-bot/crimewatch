@@ -1,7 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Circle, ZoomControl } from "react-leaflet";
+import { useState, useEffect, useRef } from "react";
+import {
+  MapContainer as LeafletMapContainer,
+  TileLayer as LeafletTileLayer,
+  Circle as LeafletCircle,
+  ZoomControl,
+} from "react-leaflet";
+import L from "leaflet";
+import type { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-defaulticon-compatibility";
 import "leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css";
@@ -18,6 +25,7 @@ import IncidentCarousel from "@/components/map/incident-carousel";
 import FilterSidebar from "@/components/map/filter-sidebar";
 import SidebarToggle from "@/components/map/sidebar-toggle";
 import IncidentDetailDialog from "@/components/map/incident-detail-dialog";
+import { fetchAddressFromCoordinates } from "@/utils/location-utils";
 
 export default function MapView() {
   // Add a new state for carousel visibility
@@ -40,6 +48,7 @@ export default function MapView() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const locationRef = useRef<[number, number] | null>(null);
 
   useEffect(() => {
     // Close sidebar on mobile by default
@@ -51,7 +60,12 @@ export default function MapView() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setMapCenter([position.coords.latitude, position.coords.longitude]);
+          const currentLocation: [number, number] = [
+            position.coords.latitude,
+            position.coords.longitude,
+          ];
+          locationRef.current = currentLocation;
+          setMapCenter(currentLocation);
           fetchIncidents(
             position.coords.latitude,
             position.coords.longitude,
@@ -67,7 +81,7 @@ export default function MapView() {
       // Fallback for browsers that don't support geolocation
       fetchIncidents(mapCenter[0], mapCenter[1], radius);
     }
-  }, [radius, mapCenter[0], mapCenter[1]]);
+  }, [radius]);
 
   const fetchIncidents = async (lat: number, lng: number, radius: number) => {
     setLoading(true);
@@ -98,13 +112,18 @@ export default function MapView() {
     );
   };
 
+  const getLeafletMap = () => {
+    const mapElement = document.querySelector(".leaflet-container");
+    return mapElement ? (mapElement as any)._leaflet_map : null;
+  };
+
   const handleViewDetails = (incident: Incident) => {
     setSelectedIncident(incident.id);
     setSelectedIncidentData(incident);
     setDetailDialogOpen(true);
 
     // Fly to the incident location
-    const map = document.querySelector(".leaflet-container")?._leaflet_map;
+    const map = getLeafletMap();
     if (map) {
       map.flyTo([incident.latitude, incident.longitude], 15);
     }
@@ -114,14 +133,52 @@ export default function MapView() {
     setSelectedIncident(incident.id);
 
     // Fly to the incident location without opening the dialog
-    const map = document.querySelector(".leaflet-container")?._leaflet_map;
+    const map = getLeafletMap();
     if (map) {
       map.flyTo([incident.latitude, incident.longitude], 15);
     }
   };
 
-  const handleLocationSearch = (lat: number, lng: number) => {
-    setMapCenter([lat, lng]);
+  const handleLocationSearch = async (lat: number, lng: number) => {
+    const newCenter: LatLngExpression = [lat, lng];
+    locationRef.current = newCenter;
+    setMapCenter(newCenter);
+    fetchIncidents(lat, lng, radius);
+    const address = await fetchAddressFromCoordinates(lat, lng);
+    if (address) {
+      console.log(`Found address: ${address}`);
+    }
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newCenter: LatLngExpression = [
+            position.coords.latitude,
+            position.coords.longitude,
+          ];
+          locationRef.current = newCenter;
+          setMapCenter(newCenter);
+          setSelectedIncident(null); // Clear selected incident
+          setSelectedIncidentData(null); // Clear selected incident data
+          fetchIncidents(position.coords.latitude, position.coords.longitude, radius);
+          const map = getLeafletMap();
+          if (map) {
+            map.flyTo(newCenter, 13); // Fly to the new location
+          }
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+        }
+      );
+    }
+  };
+
+  const handleLocationFound = (lat: number, lng: number, address?: string) => {
+    const newCenter: LatLngExpression = [lat, lng];
+    locationRef.current = newCenter;
+    setMapCenter(newCenter);
     fetchIncidents(lat, lng, radius);
   };
 
@@ -158,8 +215,8 @@ export default function MapView() {
       {/* Map Container */}
       <div className="flex-1 relative h-full">
         <div className="absolute inset-0 z-10">
-          <MapContainer
-            center={mapCenter}
+          <LeafletMapContainer
+            center={mapCenter as L.LatLngExpression}
             zoom={13}
             style={{ height: "100%", width: "100%" }}
             zoomControl={false}
@@ -171,15 +228,15 @@ export default function MapView() {
               selectedIncident={selectedIncident}
               incidents={allIncidents}
             />
-            <TileLayer
+            <LeafletTileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
             <LocationMarker />
 
             {/* Add radius circle */}
-            <Circle
-              center={mapCenter}
+            <LeafletCircle
+              center={mapCenter as L.LatLngExpression}
               radius={radius}
               pathOptions={{
                 fillColor: "#1e40af",
@@ -201,7 +258,7 @@ export default function MapView() {
                   onViewDetails={handleViewDetails}
                 />
               ))}
-          </MapContainer>
+          </LeafletMapContainer>
         </div>
 
         {/* Incident Cards at Bottom */}
