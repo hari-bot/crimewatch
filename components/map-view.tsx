@@ -143,6 +143,7 @@ export default function MapView() {
     const newCenter: LatLngExpression = [lat, lng];
     locationRef.current = newCenter;
     setMapCenter(newCenter);
+    setSelectedIncident(null); 
     fetchIncidents(lat, lng, radius);
     const address = await fetchAddressFromCoordinates(lat, lng);
     if (address) {
