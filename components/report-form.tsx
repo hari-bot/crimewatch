@@ -147,9 +147,17 @@ export default function ReportForm() {
     }
   };
 
-  const handleLocationFound = (lat: number, lng: number, address?: string) => {
+  const handleLocationFound = async (
+    lat: number,
+    lng: number,
+    address?: string
+  ) => {
     setMapCenter([lat, lng]);
     setMarkerPosition([lat, lng]);
+
+    if (!address) {
+      address = await fetchAddressFromCoordinates(lat, lng);
+    }
 
     setFormData((prev) => ({
       ...prev,
