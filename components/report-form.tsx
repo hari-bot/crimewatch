@@ -30,7 +30,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/use-toast";
 import { crimeTypes } from "@/constants/crime-types";
 import { fetchAddressFromCoordinates } from "@/utils/location-utils";
-import LocationPicker from "@/components/report/location-picker";
+import LocationMarker from "@/components/map/location-marker";
 import ChangeMapView from "@/components/report/map-view-control";
 import LocationSearch from "@/components/report/location-search";
 import ImageUpload from "@/components/report/image-upload";
@@ -360,10 +360,14 @@ export default function ReportForm() {
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
                     <ChangeMapView center={mapCenter} />
-                    <LocationPicker
-                      onLocationSelect={handleLocationSelect}
+                    <LocationMarker
                       position={markerPosition}
-                      setPosition={setMarkerPosition}
+                      setPosition={(position) => {
+                        setMarkerPosition(position);
+                        if (position) {
+                          handleLocationSelect(position[0], position[1]);
+                        }
+                      }}
                     />
                   </MapContainer>
                 </div>
