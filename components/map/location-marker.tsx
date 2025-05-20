@@ -9,14 +9,20 @@ interface LocationMarkerProps {
   setPosition?: (position: [number, number] | null) => void;
 }
 
-export default function LocationMarker({ position: externalPosition, setPosition: setExternalPosition }: LocationMarkerProps = {}) {
-  const [localPosition, setLocalPosition] = useState<[number, number] | null>(null);
+export default function LocationMarker({
+  position: externalPosition,
+  setPosition: setExternalPosition,
+}: LocationMarkerProps = {}) {
+  const [localPosition, setLocalPosition] = useState<[number, number] | null>(
+    null
+  );
   const map = useMap();
-  
+
   // Use either the external position state or the local position state
-  const position = externalPosition !== undefined ? externalPosition : localPosition;
+  const position =
+    externalPosition !== undefined ? externalPosition : localPosition;
   const setPosition = setExternalPosition || setLocalPosition;
-    // We don't need map click events here as they are handled by LocationPicker
+  // We don't need map click events here as they are handled by LocationPicker
 
   // Only use locate if we don't have an external position already set
   useEffect(() => {
@@ -47,7 +53,10 @@ export default function LocationMarker({ position: externalPosition, setPosition
       eventHandlers={{
         dragend: (e) => {
           const marker = e.target;
-          const newPosition: [number, number] = [marker.getLatLng().lat, marker.getLatLng().lng];
+          const newPosition: [number, number] = [
+            marker.getLatLng().lat,
+            marker.getLatLng().lng,
+          ];
           setPosition(newPosition);
         },
       }}

@@ -97,14 +97,15 @@ export default function ReportForm() {
         }
       );
     }
-  }, [toast]);  const handleLocationSelect = (lat: number, lng: number) => {
+  }, [toast]);
+  const handleLocationSelect = (lat: number, lng: number) => {
     // Batch state updates for better performance
     const newPosition: [number, number] = [lat, lng];
-    
+
     // Update all state at once to prevent flickering
     setMarkerPosition(newPosition);
     setMapCenter(newPosition);
-    
+
     // Update form data
     setFormData((prev) => ({
       ...prev,
@@ -155,14 +156,15 @@ export default function ReportForm() {
         }
       );
     }
-  };  const handleLocationFound = async (
+  };
+  const handleLocationFound = async (
     lat: number,
     lng: number,
     address?: string
   ) => {
     // Batch state updates for better performance
     const newPosition: [number, number] = [lat, lng];
-    
+
     // Update all state at once to prevent flickering
     setMapCenter(newPosition);
     setMarkerPosition(newPosition);
@@ -331,7 +333,6 @@ export default function ReportForm() {
                     Use Current Location
                   </Button>
                 </div>
-
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <Label htmlFor="latitude">Latitude</Label>
@@ -361,7 +362,8 @@ export default function ReportForm() {
                       }
                     />
                   </div>
-                </div>                <div className="h-64 rounded-md overflow-hidden border mt-1.5">
+                </div>{" "}
+                <div className="h-64 rounded-md overflow-hidden border mt-1.5">
                   <MapContainer
                     center={mapCenter}
                     zoom={13}
@@ -370,11 +372,11 @@ export default function ReportForm() {
                     <TileLayer
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />                    <ChangeMapView center={mapCenter} />
-                    
+                    />{" "}
+                    <ChangeMapView center={mapCenter} />
                     {/* Only use LocationMarker for display - no click handling */}
                     {markerPosition && (
-                      <LocationMarker 
+                      <LocationMarker
                         position={markerPosition}
                         setPosition={(position) => {
                           if (position) {
@@ -384,7 +386,6 @@ export default function ReportForm() {
                         }}
                       />
                     )}
-                    
                     {/* Handle map clicks to update the marker position */}
                     <LocationPicker
                       onLocationSelect={handleLocationSelect}
