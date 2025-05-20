@@ -11,7 +11,8 @@ export default function ChangeMapView({ center }: ChangeMapViewProps) {
   const map = useMap();
 
   useEffect(() => {
-    map.flyTo(center, 13); // Ensuring map moves to the searched location
+    // Use setView instead of flyTo for a smoother experience
+    map.setView(center, map.getZoom() || 13);
   }, [center, map]);
 
   return null;

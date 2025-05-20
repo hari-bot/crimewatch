@@ -14,7 +14,8 @@ export default function LocationPicker({
   position,
   setPosition,
 }: LocationPickerProps) {
-  const map = useMapEvents({
+  // Only handle map click events without rendering a marker
+  useMapEvents({
     click(e: any) {
       const newPosition: [number, number] = [e.latlng.lat, e.latlng.lng];
       setPosition(newPosition);
@@ -22,5 +23,6 @@ export default function LocationPicker({
     },
   });
 
-  return position === null ? null : <Marker position={position} />;
+  // Don't render anything - we'll use LocationMarker for the visual marker
+  return null;
 }

@@ -31,9 +31,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { crimeTypes } from "@/constants/crime-types";
 import { fetchAddressFromCoordinates } from "@/utils/location-utils";
 import LocationMarker from "@/components/map/location-marker";
+import LocationPicker from "@/components/report/location-picker";
 import ChangeMapView from "@/components/report/map-view-control";
 import LocationSearch from "@/components/report/location-search";
 import ImageUpload from "@/components/report/image-upload";
+import "leaflet-defaulticon-compatibility";
+import "leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css";
 
 export default function ReportForm() {
   const { toast } = useToast();
@@ -94,15 +97,22 @@ export default function ReportForm() {
         }
       );
     }
-  }, [toast]);
-
-  const handleLocationSelect = (lat: number, lng: number) => {
+  }, [toast]);  const handleLocationSelect = (lat: number, lng: number) => {
+    // Batch state updates for better performance
+    const newPosition: [number, number] = [lat, lng];
+    
+    // Update all state at once to prevent flickering
+    setMarkerPosition(newPosition);
+    setMapCenter(newPosition);
+    
+    // Update form data
     setFormData((prev) => ({
       ...prev,
       latitude: lat,
       longitude: lng,
     }));
 
+    // Fetch and update address
     fetchAddressFromCoordinates(lat, lng).then((address) => {
       if (address) {
         setFormData((prev) => ({ ...prev, address }));
@@ -145,20 +155,24 @@ export default function ReportForm() {
         }
       );
     }
-  };
-
-  const handleLocationFound = async (
+  };  const handleLocationFound = async (
     lat: number,
     lng: number,
     address?: string
   ) => {
-    setMapCenter([lat, lng]);
-    setMarkerPosition([lat, lng]);
+    // Batch state updates for better performance
+    const newPosition: [number, number] = [lat, lng];
+    
+    // Update all state at once to prevent flickering
+    setMapCenter(newPosition);
+    setMarkerPosition(newPosition);
 
+    // Fetch address if not provided
     if (!address) {
       address = await fetchAddressFromCoordinates(lat, lng);
     }
 
+    // Update form data
     setFormData((prev) => ({
       ...prev,
       latitude: lat,
@@ -347,9 +361,7 @@ export default function ReportForm() {
                       }
                     />
                   </div>
-                </div>
-
-                <div className="h-64 rounded-md overflow-hidden border mt-1.5">
+                </div>                <div className="h-64 rounded-md overflow-hidden border mt-1.5">
                   <MapContainer
                     center={mapCenter}
                     zoom={13}
@@ -358,12 +370,26 @@ export default function ReportForm() {
                     <TileLayer
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <ChangeMapView center={mapCenter} />
-                    <LocationMarker
-                      position={markerPosition}
+                    />                    <ChangeMapView center={mapCenter} />
+                    
+                    {/* Only use LocationMarker for display - no click handling */}
+                    {markerPosition && (
+                      <LocationMarker 
+                        position={markerPosition}
+                        setPosition={(position) => {
+                          if (position) {
+                            // Only handle drag events
+                            handleLocationSelect(position[0], position[1]);
+                          }
+                        }}
+                      />
+                    )}
+                    
+                    {/* Handle map clicks to update the marker position */}
+                    <LocationPicker
+                      onLocationSelect={handleLocationSelect}
+                      position={null} /* Don't render a second marker */
                       setPosition={(position) => {
-                        setMarkerPosition(position);
                         if (position) {
                           handleLocationSelect(position[0], position[1]);
                         }

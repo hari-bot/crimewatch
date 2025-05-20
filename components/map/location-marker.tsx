@@ -1,20 +1,32 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Marker, Popup, useMap } from "react-leaflet";
+import { Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
-export default function LocationMarker() {
-  const [position, setPosition] = useState<[number, number] | null>(null);
+interface LocationMarkerProps {
+  position?: [number, number] | null;
+  setPosition?: (position: [number, number] | null) => void;
+}
+
+export default function LocationMarker({ position: externalPosition, setPosition: setExternalPosition }: LocationMarkerProps = {}) {
+  const [localPosition, setLocalPosition] = useState<[number, number] | null>(null);
   const map = useMap();
+  
+  // Use either the external position state or the local position state
+  const position = externalPosition !== undefined ? externalPosition : localPosition;
+  const setPosition = setExternalPosition || setLocalPosition;
+    // We don't need map click events here as they are handled by LocationPicker
 
+  // Only use locate if we don't have an external position already set
   useEffect(() => {
-    map.locate().on("locationfound", (e) => {
-      setPosition([e.latlng.lat, e.latlng.lng]);
-      map.flyTo(e.latlng, map.getZoom());
-    });
-  }, [map]);
-
+    if (!externalPosition) {
+      map.locate().on("locationfound", (e) => {
+        setPosition([e.latlng.lat, e.latlng.lng]);
+        map.flyTo(e.latlng, map.getZoom());
+      });
+    }
+  }, [map, externalPosition, setPosition]);
   return position === null ? null : (
     <Marker
       position={position}
@@ -31,10 +43,18 @@ export default function LocationMarker() {
           </div>
         `,
       })}
+      draggable={true}
+      eventHandlers={{
+        dragend: (e) => {
+          const marker = e.target;
+          const newPosition: [number, number] = [marker.getLatLng().lat, marker.getLatLng().lng];
+          setPosition(newPosition);
+        },
+      }}
     >
       <Popup>
         <div className="p-2">
-          <h3 className="font-medium text-sm">Your Location</h3>
+          <h3 className="font-medium text-sm">Selected Location</h3>
           <p className="text-xs text-muted-foreground">
             Lat: {position[0].toFixed(6)}, Lng: {position[1].toFixed(6)}
           </p>
