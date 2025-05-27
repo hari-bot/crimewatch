@@ -21,7 +21,7 @@ This project is a web-based application designed to facilitate the reporting and
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/hari-bot/crimewatch
    cd crime-reporting-system
    ```
 2. Install dependencies:
